@@ -1,9 +1,9 @@
 
 
 
-#include "krnln/membin.hpp"
-#include "krnln/protobuf.hpp"
-#include "krnln/json.hpp"
+#include "membin.hpp"
+#include "protobuf.hpp"
+#include "json.hpp"
 
 
 
@@ -294,7 +294,22 @@ public:
         b.clear();
         TEST_EXPECT(b.empty(), "Clear should make empty");
     }
+    TEST_METHOD(big_litt) {
+        // 1. 测试小端序：0x12345 (3字节) -> {0x45, 0x23, 0x01, 0x00}
+        membin b_little = to_membin(static_cast<uint64_t>(0x012345), membin::Endianness::LittleEndian);
+        TEST_EXPECT(b_little.size() == sizeof(uint64_t), std::format("LittleEndian size should be {}", sizeof(uint64_t)));
+        TEST_EXPECT(b_little[0] == 0x45, "LittleEndian byte 0 should be 0x45");
+        TEST_EXPECT(b_little[1] == 0x23, "LittleEndian byte 1 should be 0x23");
+        TEST_EXPECT(b_little[2] == 0x01, "LittleEndian byte 2 should be 0x01");
 
+        // 2. 测试大端序：0x12345 (3字节) -> {0x00, 0x01, 0x23, 0x45}
+        membin b_big = to_membin(0x012345u, membin::Endianness::BigEndian);
+        TEST_EXPECT(b_big.size() == sizeof(uint32_t), "BigEndian size should be 4");
+        TEST_EXPECT(b_big[0] == 0x00, "BigEndian byte 0 should be 0x00");
+        TEST_EXPECT(b_big[1] == 0x01, "BigEndian byte 1 should be 0x01");
+        TEST_EXPECT(b_big[2] == 0x23, "BigEndian byte 2 should be 0x23");
+        TEST_EXPECT(b_big[3] == 0x45, "BigEndian byte 3 should be 0x45");
+    }
     TEST_METHOD(modifiers) {
         membin b;
         b.push_back(1);
@@ -392,6 +407,7 @@ public:
         RUN_TEST(conversions);
         RUN_TEST(file_operations);
         RUN_TEST(performance);
+        RUN_TEST(big_litt);
     }
 };
 
@@ -515,6 +531,7 @@ public:
         RUN_TEST(json_conversion);
         RUN_TEST(stream_iteration);
         RUN_TEST(error_handling);
+
     }
 };
 
