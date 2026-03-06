@@ -301,6 +301,8 @@ public:
         TEST_EXPECT(b_little[0] == 0x45, "LittleEndian byte 0 should be 0x45");
         TEST_EXPECT(b_little[1] == 0x23, "LittleEndian byte 1 should be 0x23");
         TEST_EXPECT(b_little[2] == 0x01, "LittleEndian byte 2 should be 0x01");
+        TEST_EXPECT(b_little[3] == 0x00, "LittleEndian byte 3 should be 0x00");
+        TEST_EXPECT(b_little.extract_num<uint64_t>(0, membin::Endianness::LittleEndian) == 0x012345u, "LittleEndian byte read fail");
 
         // 2. 测试大端序：0x12345 (3字节) -> {0x00, 0x01, 0x23, 0x45}
         membin b_big = to_membin(0x012345u, membin::Endianness::BigEndian);
@@ -309,6 +311,8 @@ public:
         TEST_EXPECT(b_big[1] == 0x01, "BigEndian byte 1 should be 0x01");
         TEST_EXPECT(b_big[2] == 0x23, "BigEndian byte 2 should be 0x23");
         TEST_EXPECT(b_big[3] == 0x45, "BigEndian byte 3 should be 0x45");
+        TEST_EXPECT(b_big.extract_num<uint32_t>(0, membin::Endianness::BigEndian) == 0x012345u, "BigEndian byte read fail");
+        
     }
     TEST_METHOD(modifiers) {
         membin b;
