@@ -68,11 +68,35 @@ const auto num = data.get_data<uint32_t>();
 //或者
 const auto num = data.submem(sizeof(uint32_t)).reverse_endianness(0).get_data<uint32_t>(0);
 
+```
+#### 内存表示形式
+```cpp
 
+#include "krnln/membin.hpp"  
+using namespace krnln;
 
+// 1. 十六进制的处理
+// 直接构造
+auto data = membin({0x12,0x34,0x56});
+// 从文本构造
+auto data = membin::from_hex("123456");
+auto data = membin::from_hex("12 3 4 56");
+// 输出
+auto hex = data.hex();
+
+// 2. base64的处理
+// 从文本构造
+auto data = membin::from_base64("EjRW");
+// 输出
+auto b64 = data.base64();
+
+// 3.十进制
+// 直接构造
+auto data = membin({18,52,86});
+// 输出
+auto dc = data.decimal();
 
 ```
-
 ## ---
 
 **其他模块概览**
