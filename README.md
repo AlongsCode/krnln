@@ -69,7 +69,7 @@ const auto num = data.get_data<uint32_t>();
 const auto num = data.submem(sizeof(uint32_t)).reverse_endianness(0).get_data<uint32_t>(0);
 
 
-// !对于明确大小端的数值类型请使用,to_membin(),并在第二个参数指定大小端
+// !对于明确大小端的数值类型强烈请使用to_membin(),并在第二个参数指定大小端
 membin b_big = to_membin(0x012345u, membin::Endianness::BigEndian);
 native_num = b_big.extract_num<uint32_t>(0, membin::Endianness::BigEndian);
 
