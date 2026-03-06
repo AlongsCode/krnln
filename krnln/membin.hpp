@@ -589,7 +589,7 @@ namespace krnln {
         enum class Endianness {
             BigEndian,
             LittleEndian,
-            Native = static_cast<int>(std::endian::native)
+            Native = static_cast<int>(std::endian::native == std::endian::little ? 1:0)
         };
 
     private:
