@@ -60,6 +60,7 @@ namespace krnln {
          */
         inline void* smart_realloc(void* ptr, size_t used_size, size_t current_capacity, size_t new_capacity) {
             size_t slack_space = current_capacity - used_size;
+
             if (slack_space > (used_size >> 1)) {
                 // 空闲空间过多，使用复制方式优化内存使用
                 void* result = checked_malloc(new_capacity);
@@ -251,6 +252,32 @@ namespace krnln {
     // 转换工具类 - 用于复用转换逻辑
     namespace _conversion {
 
+
+        // 强制字节序转换 (例如：将主机序转为大端)
+        template <typename T>
+        [[nodiscard]] inline T swap_endian(T val) {
+            /*原版:
+            template <typename T>
+        [[nodiscard]] inline T swap_endian(T val) {
+            static_assert(std::is_arithmetic_v<T>, "必须为可计算类型");
+            union { T val; uint8_t raw[sizeof(T)]; } src, dst;
+            src.val = val;
+            for (size_t i = 0; i < sizeof(T); ++i)
+                dst.raw[i] = src.raw[sizeof(T) - 1 - i];
+            return dst.val;
+        }
+            */
+
+            static_assert(std::is_arithmetic_v<T>, "必须为可计算类型");
+            T ret;
+            uint8_t* src = reinterpret_cast<uint8_t*>(&val);
+            uint8_t* dst = reinterpret_cast<uint8_t*>(&ret);
+            for (size_t i = 0; i < sizeof(T); ++i) {
+                dst[i] = src[sizeof(T) - 1 - i];
+            }
+            return ret;
+        }
+
         /**
          * @brief 转换为十进制文本格式
          * @tparam CharType 字符类型
@@ -347,7 +374,7 @@ namespace krnln {
                 }
 
                 for (size_t j = 0; j < 4; ++j) {
-                    if (j <= bytes_in_triple) {
+                    if (j * 6 < bytes_in_triple * 8) {
                         uint8_t index = (triple >> (18 - j * 6)) & 0x3F;
                         result.push_back(alphabet[index]);
                     }
@@ -558,6 +585,13 @@ namespace krnln {
         static constexpr bool kIsLittleEndian = (std::endian::native == std::endian::little);
         static constexpr size_t npos = static_cast<size_t>(-1);
 
+        // 数值类内存布局
+        enum class Endianness {
+            BigEndian,
+            LittleEndian,
+            Native = static_cast<int>(std::endian::native)
+        };
+
     private:
 
         /**
@@ -760,6 +794,8 @@ namespace krnln {
             "MediumLargeStorage内存布局损坏");
         static_assert(alignof(MediumLargeStorage) >= alignof(value_type),
             "Alignment requirement not met");
+        static_assert(std::is_trivially_destructible_v<MediumLargeStorage>,
+            "MediumLargeStorage 必须是平凡析构的，以确保手动资源转移的安全性");
     public:
         // ==================== 构造与析构 ====================
 
@@ -890,11 +926,24 @@ namespace krnln {
          * @return 当前对象引用
          */
         membin& operator=(membin&& source) noexcept {
+            /*
+            原版
             if (this != &source) {
                 this->~membin();
                 new (this) membin(std::move(source));
             }
+            return *this;*/
+
+            if (this != &source) {
+                if (storage_category() != StorageCategory::isSmall) {
+                    destroy_medium_large_storage();
+                }
+
+                this->medium_large = source.medium_large;
+                source.reset_to_empty();
+            }
             return *this;
+
         }
 
         /**
@@ -1634,7 +1683,43 @@ namespace krnln {
             }
             return value;
         }
+        /**
+        * @brief 从指定偏移处读取一个数值
+        * @tparam T 目标数值类型 (如 uint32_t, int16_t 等)
+        * @param offset 读取的起始偏移
+        * @param endian 指定字节序，默认为系统原生 (Native)
+        * @return 读取到的数值
+        * @throws std::out_of_range 如果读取范围越界
+        */
+        template <typename T>
+        [[nodiscard]] T extract_num(size_t offset, Endianness endian = Endianness::Native) const {
+            static_assert(std::is_arithmetic_v<T>, "T 必须为算术类型");
 
+            if (offset + sizeof(T) > size()) {
+                throw std::out_of_range("get_num 读取越界");
+            }
+
+            T value;
+            // 使用 std::memcpy 避免对齐问题
+            std::memcpy(&value, data() + offset, sizeof(T));
+
+            // 如果指定字节序与原生字节序不同，则进行转换
+            // 注意：这里假设转换逻辑只针对跨字节读取，对于char等单字节类型无需转换
+            if constexpr (sizeof(T) > 1) {
+                if (endian != Endianness::Native) {
+                    // 如果系统是小端，而要求大端，或者系统是大端，而要求小端
+                    // 通过比较 bool 值判断是否需要交换
+                    bool native_is_little = (std::endian::native == std::endian::little);
+                    bool target_is_little = (endian == Endianness::LittleEndian);
+
+                    if (native_is_little != target_is_little) {
+                        value = _conversion::swap_endian(value);
+                    }
+                }
+            }
+
+            return value;
+        }
         /**
          * @brief 反转字节序
          * @tparam T 数据类型
@@ -2476,9 +2561,14 @@ namespace krnln {
     }
 
     // ==================== 转换函数 ====================
-
+    /********
+    * 
+	*  直接转换对于底层来说实际上是不严谨的,例如字符串的编码问题,数值类型的字节序问题,以及一些复杂类型的内存布局问题等,
+    *  但是大部分情况尤其是业务层是可以满足需求的,所以提供一些直接转换的函数,但需要用户自己确保使用时的正确性和合理性.
+    * 
+    ******/
     /**
-     * @brief 从各种类型转换为字节集
+     * @brief 从各种平凡类型转换为字节集,不建议数值类型直接通过此代码进行转换
      * @tparam T 源类型
      * @param data 源数据
      * @return 转换后的字节集
@@ -2559,6 +2649,31 @@ namespace krnln {
         }
         return membin(vector.data(), vector.size() * sizeof(T));
     }
+    // ==================== 严谨字节序转换函数 ====================
+
+
+    /**
+    * @brief 将数值转换为 membin 容器
+    * @tparam T 可计算数值类型
+    * @param num 需要转换的数值
+    * @param order 目标字节序
+    */
+    template <typename T>
+    static membin to_membin(T num, membin::Endianness order) {
+        static_assert(std::is_arithmetic_v<T>, "必须为可计算类型");
+
+        T data = num;
+        // 如果当前系统序与目标序不一致，则转换
+        if constexpr (std::endian::native == std::endian::little) {
+            if (order == membin::Endianness::BigEndian) data = _conversion::swap_endian(data);
+        }
+        else {
+            if (order == membin::Endianness::LittleEndian) data = _conversion:::swap_endian(data);
+        }
+
+        return membin(&data, sizeof(T));
+    }
+
 
 } // namespace krnln
 
